@@ -1,0 +1,17 @@
+- hosts: cloud-computing
+
+  tasks:
+    - name: install git
+      ansible.builtin.apt:
+        name: git
+        state: present
+        update_cache: yes
+      become: yes
+      tags: install
+
+    - name: remove  git
+      ansible.builtin.apt:
+        name: git
+        state: absent
+      become: yes
+      tags: remove
