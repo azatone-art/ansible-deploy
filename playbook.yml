@@ -1,17 +1,56 @@
 - hosts: cloud-computing
+  become: yes
 
   tasks:
-    - name: install git
+    - name: update apt cache
+      ansible.builtin.apt:
+        update_cache: yes
+
+    - name: install Git
       ansible.builtin.apt:
         name: git
         state: present
-        update_cache: yes
-      become: yes
-      tags: install
+      tags: [install, install_git]
 
-    - name: remove  git
+    - name: install Make
       ansible.builtin.apt:
-        name: git
-        state: absent
+        name: make
+        state: present
+      tags: [install, install_make]
+
+    - name: install Nodejs
+      ansible.builtin.apt:
+        name: nodejs
+        state: present
+      tags: [install, install_nodejs]       
+    
+    - name: add users
+      ansible.builtin.user:
+        name: "{{ item }}"
+        state: present
+      loop:
+        - aria
+        - sansa
+        - tirion 
       become: yes
-      tags: remove
+      tags: add_users
+
+    - name: install nginx
+      ansible.builtin.apt:
+        name: nginx
+        state: latest
+      tags: [install, install_nginx, nginx]  
+
+    - name: update nginx config
+      ansible.builtin.copy:
+        src: files/nginx.conf
+        dest: /etc/nginx/nginx.conf
+      notify:
+        - restart nginx
+      tags: [update, update_nginx_conf, nginx]  
+
+  handlers:
+      - name: restart nginx
+        ansible.builtin.service:
+          name: nginx
+          state: reloaded   
