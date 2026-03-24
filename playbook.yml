@@ -1,5 +1,6 @@
-- hosts: cloud-computing
+- hosts: all
   become: yes
+  gather_facts: no
 
   tasks:
     - name: update apt cache

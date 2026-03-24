@@ -1,8 +1,8 @@
-- hosts: cloud-computing
+- hosts: nginx
   become: yes
   vars:
     nginx_port: 8080
-    root_dir: /etc/nginx/sites-available 
+    root_dir: /var/www/myapp/ 
 
   tasks:
     - name: install nginx
@@ -12,19 +12,32 @@
         update_cache: yes
       tags: [install, install_nginx]
 
+    - name: creat app directory
+      file:
+        path: "{{root_dir}}"
+        state: directory
+      tags: [copy, copy_index]
+
     - name: copy index.html
-      ansible.builtin.copy:
-        src: files/index.html
+      ansible.builtin.template:
+        src: files/index.html.j2
         dest: "{{root_dir}}/index.html"
       tags: [copy, copy_index]
 
     - name: update nginx config
       ansible.builtin.template:
         src: files/nginx.conf.j2
-        dest: "{{root_dir}}/app"
+        dest: /etc/nginx/sites-available/app
       notify:
         - restart nginx
-      tags: [update, update_nginx_conf, nginx]  
+      tags: [update, update_nginx_conf, nginx]
+
+    - name: enable nginx site
+      ansible.builtin.file:
+        src: /etc/nginx/sites-available/app
+        dest: /etc/nginx/sites-enabled/app
+        state: link
+      tags: [update, update_nginx_conf, nginx]    
 
   handlers:
         - name: restart nginx
