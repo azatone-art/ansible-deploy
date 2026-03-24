@@ -1,5 +1,8 @@
 - hosts: cloud-computing
   become: yes
+  vars:
+    nginx_port: 8080
+    root_dir: /etc/nginx/sites-available 
 
   tasks:
     - name: install nginx
@@ -12,13 +15,13 @@
     - name: copy index.html
       ansible.builtin.copy:
         src: files/index.html
-        dest: /usr/share/nginx/html/index.html
+        dest: "{{root_dir}}/index.html"
       tags: [copy, copy_index]
 
     - name: update nginx config
-      ansible.builtin.copy:
-        src: files/nginx.conf
-        dest: /etc/nginx/nginx.conf
+      ansible.builtin.template:
+        src: files/nginx.conf.j2
+        dest: "{{root_dir}}/app"
       notify:
         - restart nginx
       tags: [update, update_nginx_conf, nginx]  
