@@ -33,7 +33,6 @@
         - aria
         - sansa
         - tirion 
-      become: yes
       tags: add_users
 
     - name: install nginx

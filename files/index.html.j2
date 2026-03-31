@@ -10,7 +10,11 @@
 
 <body>
     <h1>Hello World!</h1>
-    <h2>This is server {{ server_name }}!</h2>
+    <h2>{{ ('This is server ' ~ server_name ~ '!') | upper }}</h2>
+    <small>
+    <pre><code>{{ cowsay_result.stdout }}</code></pre>
+    Deployed at: {{ "%a %d %b %Y %H:%M:%S" | strftime(ansible_facts['date_time']['epoch'] | int) }}
+    </small>
 </body>
 
 </html>

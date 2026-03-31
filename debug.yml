@@ -1,0 +1,12 @@
+- hosts: my-vm
+  gather_facts: no
+
+  tasks:
+    - shell: ls /home
+      register: home_dirs
+
+    - debug: var=home_dirs
+
+    - name: add home dirs to cron
+      cron: name='backup dirs' minute='0' hour='5,2' job='backup /home/{{ item }}'
+      with_items: home_dirs.stdout_lines

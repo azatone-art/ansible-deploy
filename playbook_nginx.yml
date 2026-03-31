@@ -4,7 +4,18 @@
     nginx_port: 8080
     root_dir: /var/www/myapp/ 
 
+  pre_tasks:
+    - name: Run cowsay before main tasks
+      ansible.builtin.command: /usr/games/cowsay "This is server {{ server_name }}!"
+      register: cowsay_result
+      tags: [always]
+
+    - debug: var=cowsay_result
+      tags: [always]
+
+
   tasks:
+
     - name: install nginx
       ansible.builtin.apt:
         name: nginx
@@ -16,7 +27,7 @@
       file:
         path: "{{root_dir}}"
         state: directory
-      tags: [copy, copy_index]
+      tags: [copy]
 
     - name: copy index.html
       ansible.builtin.template:
