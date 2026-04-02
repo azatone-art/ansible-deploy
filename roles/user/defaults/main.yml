@@ -1,0 +1,5 @@
+users:
+  - name: devuser
+    email: dev@example.com
+  - name: testuser
+    email: test@example.com

@@ -1,0 +1,20 @@
+- hosts: my-vm
+  become: yes
+  vars:
+    users:
+    - name: alex
+      email: alex@example.com
+    - name: sib
+      email: sib@example.com
+
+  roles:
+    - role: git
+      tags: [git]
+    - role: user
+      tags: [user]
+    - role: node
+      tags: [node]
+    - role: postgres
+      tags: [postgres]
+    - role: nginx
+      tags: [nginx]
