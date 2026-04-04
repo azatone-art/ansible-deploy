@@ -1,5 +1,27 @@
-- name: install postgres
+- name: install postgres and dependencies
   ansible.builtin.apt:
-    name: postgresql
+    name: 
+      - postgresql
+      - python3-psycopg2
+      - acl
     state: present
     update_cache: yes
+
+- name: cteate DB
+  community.postgresql.postgresql_db:
+    name: "{{ db_name  }}"
+    state: present
+  become_user: postgres
+
+- name: copy sql scripts to server
+  ansible.builtin.copy:
+    src: "sql/"           
+    dest: "/tmp/sql/"      
+    mode: '0777'         
+
+- name: run sql scripts
+  community.postgresql.postgresql_script:
+    db: "{{ db_name }}"
+    path: "/tmp/sql/{{ item | basename }}"
+  loop: "{{ sql_files_paths }}"
+  become_user: postgres

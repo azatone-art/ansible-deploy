@@ -13,21 +13,36 @@
   loop: '{{ users }}'
   tags: [update, update_git_conf]
 
-- name: creat .ssh directory
-  file:
-    path: '/home/{{ item.name }}/.ssh/'
-    state: directory
-    owner: '{{ item.name }}'
-    group: '{{ item.name }}'
-    mode: '0700'
-  loop: '{{ users }}'
-  tags: [update, update_git_ssh, ssh]
+# - name: creat .ssh directory
+#   file:
+#     path: '/home/{{ item.name }}/.ssh/'
+#     state: directory
+#     owner: '{{ item.name }}'
+#     group: '{{ item.name }}'
+#     mode: '0700'
+#   loop: '{{ users }}'
+#   tags: [update, update_git_ssh, ssh]
 
-- name: update ssh key
-  ansible.builtin.copy:
-    src: id_ed25519.pub
-    dest: '/home/{{ item.name }}/.ssh/authorized_keys'
-    owner: '{{ item.name }}'
-    mode: '0600'
-  loop: '{{ users }}'
-  tags: [update, update_git_ssh, ssh] 
+# - name: update ssh key
+#   ansible.builtin.copy:
+#     src: id_ed25519.pub
+#     dest: '/home/{{ item.name }}/.ssh/authorized_keys'
+#     owner: '{{ item.name }}'
+#     mode: '0600'
+#   loop: '{{ users }}'
+#   tags: [update, update_git_ssh, ssh]
+
+- name: add ssh key
+  ansible.posix.authorized_key:
+    user: "{{ item.name }}"
+    key: "{{ lookup('file', 'id_ed25519.pub') }}"
+  loop: "{{ users }}"
+  tags: [add_ssh, ssh]
+
+- name: remove ssh key
+  ansible.posix.authorized_key:
+    user: "{{ item.name }}"
+    key: "{{ lookup('file', 'id_ed25519.pub') }}"
+    state: absent
+  loop: "{{ users }}"
+  tags: [remove_ssh, ssh]

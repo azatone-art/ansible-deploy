@@ -2,10 +2,8 @@
   become: yes
   vars:
     users:
-    - name: alex
+    - name: sansa
       email: alex@example.com
-    - name: sib
-      email: sib@example.com
 
   roles:
     - role: git
