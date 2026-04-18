@@ -1,6 +1,0 @@
-db_user: postgres
-db_name: myapp
-sql_files_paths:
-  - sql/001_schema.sql
-  - sql/002_users.sql
-  - sql/003_topics.sql

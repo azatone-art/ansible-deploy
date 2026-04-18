@@ -1,0 +1,15 @@
+﻿.ansible/
+*.retry
+
+# Локальные секреты и пароль от Ansible Vault. Примеры можно хранить в git.
+vault.txt
+group_vars/all/vault.yml
+
+# Временные файлы Python и редакторов
+__pycache__/
+*.py[cod]
+.venv/
+.idea/
+.vscode/
+# Локальный архив старых экспериментов и неиспользуемых playbook-файлов.
+_archive/

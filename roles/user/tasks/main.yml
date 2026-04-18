@@ -1,48 +1,188 @@
+- name: install git
+  ansible.builtin.apt:
+    name: git
+    state: present
+    update_cache: yes
+  tags: [install_git]
+
 - name: add users
   ansible.builtin.user:
     name: "{{ item.name }}"
-    shell: /bin/bash
     state: present
   loop: '{{ users }}'
-  tags: [add_users]
+  tags: [create_users]
 
-- name: update git config
-  ansible.builtin.template:
-    src: .gitconfig.j2
-    dest: '/home/{{ item.name }}/.gitconfig'
-  loop: '{{ users }}'
-  tags: [update, update_git_conf]
-
-# - name: creat .ssh directory
-#   file:
-#     path: '/home/{{ item.name }}/.ssh/'
-#     state: directory
-#     owner: '{{ item.name }}'
-#     group: '{{ item.name }}'
-#     mode: '0700'
-#   loop: '{{ users }}'
-#   tags: [update, update_git_ssh, ssh]
-
-# - name: update ssh key
-#   ansible.builtin.copy:
-#     src: id_ed25519.pub
-#     dest: '/home/{{ item.name }}/.ssh/authorized_keys'
-#     owner: '{{ item.name }}'
-#     mode: '0600'
-#   loop: '{{ users }}'
-#   tags: [update, update_git_ssh, ssh]
-
-- name: add ssh key
-  ansible.posix.authorized_key:
-    user: "{{ item.name }}"
-    key: "{{ lookup('file', 'id_ed25519.pub') }}"
+- name: set bash shell
+  ansible.builtin.user:
+    name: "{{ item.name}}"
+    shell: /bin/bash
   loop: "{{ users }}"
-  tags: [add_ssh, ssh]
+  tags: [shell, set_shell]
 
-- name: remove ssh key
-  ansible.posix.authorized_key:
-    user: "{{ item.name }}"
-    key: "{{ lookup('file', 'id_ed25519.pub') }}"
-    state: absent
+- name: add git branch to bash prompt
+  ansible.builtin.blockinfile:
+    path: "/home/{{ item.name }}/.bashrc"
+    marker: "# {mark} ANSIBLE MANAGED BLOCK: GIT PROMPT"
+    block: |
+      parse_git_branch() {
+           git branch 2> /dev/null | sed -e '/^[^*]/d' -e 's/* \(.*\)/ (\1)/'
+      }
+      export PS1="${debian_chroot:+($debian_chroot)}\[\033[01;32m\]\u@\h\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\[\033[01;33m\]\$(parse_git_branch)\[\033[00m\]\$ "
   loop: "{{ users }}"
-  tags: [remove_ssh, ssh]
+  tags: [shell, prompt]
+
+- name: Set git user name
+  become_user: "{{ item.name }}"
+  ansible.builtin.git_config:
+    name: user.name
+    value: "{{ item.name }}"
+    scope: global
+  loop: "{{ users }}"
+  tags: [git_config]
+
+- name: Set git user email
+  become_user: "{{ item.name }}"
+  ansible.builtin.git_config:
+    name: user.email
+    value: "{{ item.email }}"
+    scope: global
+  loop: "{{ users }}"
+  tags: [git_config]
+
+- name: Ensure .ssh directory exists
+  become_user: "{{ item.name }}"
+  file:
+    path: "/home/{{ item.name }}/.ssh"
+    state: directory
+    mode: '0700'
+  loop: "{{ users }}"
+  tags: [ssh]  
+
+- name: Generate SSH key
+  become_user: "{{ item.name }}"
+  ansible.builtin.openssh_keypair:
+    path: "/home/{{ item.name }}/.ssh/id_ed25519"
+    type: ed25519
+    comment: "{{ item.email }}"
+  loop: "{{ users }}"
+  tags: [ssh]
+
+- name: Read public key
+  ansible.builtin.slurp:
+    src: "/home/{{ item.name }}/.ssh/id_ed25519.pub"
+  register: ssh_keys
+  loop: "{{ users }}"
+  tags: [ssh]
+
+- name: Add SSH key to GitHub
+  ansible.builtin.uri:
+    url: "https://api.github.com/user/keys"
+    method: POST
+    headers:
+      Authorization: "token {{ github_token }}"
+      Accept: "application/vnd.github+json"
+    body_format: json
+    body:
+      title: "{{ item.item.name }}@{{ inventory_hostname }}"
+      key: "{{ item.content | b64decode }}"
+    status_code: [201, 422]
+  loop: "{{ ssh_keys.results }}"
+  tags: [github]
+
+- name: Add github.com to known_hosts
+  become_user: "{{ item.name }}"
+  ansible.builtin.known_hosts:
+    name: github.com
+    key: "{{ lookup('pipe', 'ssh-keyscan github.com') }}"
+  loop: "{{ users }}"
+  tags: [github]
+
+- name: Create GitHub repository
+  ansible.builtin.uri:
+    url: "https://api.github.com/user/repos"
+    method: POST
+    headers:
+      Authorization: "token {{ github_token }}"
+      Accept: "application/vnd.github+json"
+    body_format: json
+    body:
+      name: "{{ item.project_name }}"
+      private: false
+    status_code: [201, 422]
+  loop: "{{ users }}"
+  tags: [github]
+
+- name: Create project directory
+  ansible.builtin.file:
+    path: "/home/{{ item.name }}/projects/{{ item.project_name }}"
+    state: directory
+    owner: "{{ item.name }}"
+    group: "{{ item.name }}"
+    mode: '0755'
+  loop: "{{ users }}"
+  tags: [git_repo]
+
+- name: Init git repo
+  become_user: "{{ item.name }}"
+  command: git init -b main
+  args:
+    chdir: "/home/{{ item.name }}/projects/{{ item.project_name }}"
+  loop: "{{ users }}"
+  tags: [git_repo]
+
+- name: Create README
+  become_user: "{{ item.name }}"
+  copy:
+    dest: "/home/{{ item.name }}/projects/{{ item.project_name }}/README.md"
+    content: "# {{ item.project_name }}"
+  loop: "{{ users }}"
+  tags: [git_repo]
+
+- name: Check git remotes
+  become_user: "{{ item.name }}"
+  command: git remote
+  args:
+    chdir: "/home/{{ item.name }}/projects/{{ item.project_name }}"
+  register: git_remotes
+  loop: "{{ users }}"
+  loop_control:
+    index_var: idx
+  tags: [git_repo]
+
+- name: Add origin remote
+  become_user: "{{ item.name }}"
+  command: git remote add origin git@github.com:azatone-art/{{ item.project_name }}.git
+  args:
+    chdir: "/home/{{ item.name }}/projects/{{ item.project_name }}"
+  loop: "{{ users }}"
+  loop_control:
+    index_var: idx
+  when: "'origin' not in git_remotes.results[idx].stdout"
+  tags: [git_repo]
+
+- name: Git add
+  become_user: "{{ item.name }}"
+  command: git add .
+  args:
+    chdir: "/home/{{ item.name }}/projects/{{ item.project_name }}"
+  loop: "{{ users }}"
+  tags: [git_repo]
+
+- name: Git commit
+  become_user: "{{ item.name }}"
+  command: git commit -m "Initial commit"
+  args:
+    chdir: "/home/{{ item.name }}/projects/{{ item.project_name }}"
+  ignore_errors: true
+  loop: "{{ users }}"
+  tags: [git_repo]
+
+- name: Git push
+  become_user: "{{ item.name }}"
+  command: git push -u origin main
+  args:
+    chdir: "/home/{{ item.name }}/projects/{{ item.project_name }}"
+  environment:
+    GIT_SSH_COMMAND: "ssh -o StrictHostKeyChecking=no"  
+  loop: "{{ users }}"
+  tags: [git_repo]

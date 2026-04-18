@@ -1,0 +1,50 @@
+- name: Install Docker
+  apt:
+    name: docker.io
+    state: present
+    update_cache: yes
+  tags: [docker, install_docker]
+
+- name: Install docker compose
+  apt:
+    name: docker-compose
+    state: present
+  tags: [docker, compose, install_docker_compose]  
+
+- name: Add user to docker group
+  user:
+    name: "{{ item.name }}"
+    groups: docker
+    append: yes
+  loop: "{{ users }}"
+  tags: [docker, add_user_to_docker_group]
+
+- name: Copy docker-compose.yml
+  become_user: "{{ item.name }}"
+  template:
+    src: docker-compose.yml.j2
+    dest: "/home/{{ item.name }}/projects/{{ item.project_name }}/docker-compose.yml"
+  loop: "{{ users }}"
+  tags: [compose, config, copy_docker_compose]
+
+- name: Copy .env
+  become_user: "{{ item.name }}"
+  template:
+    src: .env.j2
+    dest: "/home/{{ item.name }}/projects/{{ item.project_name }}/.env"
+  loop: "{{ users }}"
+  tags: [config, copy_env]
+
+- name: Pull latest image
+  become_user: "{{ item.name }}"
+  command: docker pull {{ dockerhub_username }}/love_bot:latest
+  loop: "{{ users }}"
+  tags: [image]
+
+- name: Run docker compose
+  become_user: "{{ item.name }}"
+  command: docker-compose up -d
+  args:
+    chdir: "/home/{{ item.name }}/projects/{{ item.project_name }}"
+  loop: "{{ users }}"
+  tags: [compose, run_docker_compose]

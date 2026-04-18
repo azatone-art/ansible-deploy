@@ -1,0 +1,7 @@
+services:
+  love_bot:
+    image: {{ dockerhub_username }}/love_bot:latest
+    container_name: love_bot
+    restart: unless-stopped
+    env_file:
+      - .env
