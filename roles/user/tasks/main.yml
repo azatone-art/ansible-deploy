@@ -157,6 +157,8 @@
   command: git rm --cached --ignore-unmatch .env
   args:
     chdir: "/home/{{ item.name }}/projects/{{ item.project_name }}"
+  register: git_rm_env
+  changed_when: git_rm_env.stdout != ""
   loop: "{{ users }}"
   tags: [git_repo, gitignore]
 
