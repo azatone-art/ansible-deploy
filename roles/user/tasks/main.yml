@@ -107,7 +107,7 @@
     body_format: json
     body:
       name: "{{ item.project_name }}"
-      private: false
+      private: true
     status_code: [201, 422]
   loop: "{{ users }}"
   tags: [github]
@@ -138,6 +138,28 @@
   loop: "{{ users }}"
   tags: [git_repo]
 
+- name: Ensure project secrets are ignored by Git
+  become_user: "{{ item.name }}"
+  ansible.builtin.blockinfile:
+    path: "/home/{{ item.name }}/projects/{{ item.project_name }}/.gitignore"
+    create: yes
+    mode: "0644"
+    marker: "# {mark} ANSIBLE MANAGED BLOCK: SECRET FILES"
+    block: |
+      .env
+      .env.*
+      !.env.example
+  loop: "{{ users }}"
+  tags: [git_repo, gitignore]
+
+- name: Ensure .env is not tracked by Git
+  become_user: "{{ item.name }}"
+  command: git rm --cached --ignore-unmatch .env
+  args:
+    chdir: "/home/{{ item.name }}/projects/{{ item.project_name }}"
+  loop: "{{ users }}"
+  tags: [git_repo, gitignore]
+
 - name: Check git remotes
   become_user: "{{ item.name }}"
   command: git remote
@@ -165,7 +187,20 @@
   command: git add .
   args:
     chdir: "/home/{{ item.name }}/projects/{{ item.project_name }}"
+  changed_when: false  
   loop: "{{ users }}"
+  tags: [git_repo]
+
+- name: Check git changes
+  become_user: "{{ item.name }}"
+  command: git status --porcelain
+  args:
+    chdir: "/home/{{ item.name }}/projects/{{ item.project_name }}"
+  register: git_status
+  changed_when: false
+  loop: "{{ users }}"
+  loop_control:
+    index_var: idx
   tags: [git_repo]
 
 - name: Git commit
@@ -173,8 +208,10 @@
   command: git commit -m "Initial commit"
   args:
     chdir: "/home/{{ item.name }}/projects/{{ item.project_name }}"
-  ignore_errors: true
   loop: "{{ users }}"
+  loop_control:
+    index_var: idx
+  when: git_status.results[idx].stdout != ""
   tags: [git_repo]
 
 - name: Git push
