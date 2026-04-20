@@ -1,4 +1,4 @@
-- hosts: free_vm
+- hosts: servers
   become: yes
 
   roles:
