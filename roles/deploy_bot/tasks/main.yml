@@ -1,50 +1,62 @@
 - name: Install Docker
-  apt:
-    name: docker.io
+  ansible.builtin.apt:
+    name:
+      - docker.io
     state: present
-    update_cache: yes
+    update_cache: true
   tags: [docker, install_docker]
 
 - name: Install docker compose
-  apt:
-    name: docker-compose
+  ansible.builtin.apt:
+    name:
+      - docker-compose
     state: present
-  tags: [docker, compose, install_docker_compose]  
+  tags: [docker, compose, install_docker_compose]
 
 - name: Add user to docker group
-  user:
+  ansible.builtin.user:
     name: "{{ item.name }}"
     groups: docker
-    append: yes
+    append: true
   loop: "{{ users }}"
   tags: [docker, add_user_to_docker_group]
 
 - name: Copy docker-compose.yml
-  become_user: "{{ item.name }}"
-  template:
+  ansible.builtin.template:
     src: docker-compose.yml.j2
     dest: "/home/{{ item.name }}/projects/{{ item.project_name }}/docker-compose.yml"
+    owner: "{{ item.name }}"
+    group: "{{ item.name }}"
+    mode: "0644"
   loop: "{{ users }}"
   tags: [compose, config, copy_docker_compose]
 
 - name: Copy .env
-  become_user: "{{ item.name }}"
-  template:
+  ansible.builtin.template:
     src: .env.j2
     dest: "/home/{{ item.name }}/projects/{{ item.project_name }}/.env"
+    owner: "{{ item.name }}"
+    group: "{{ item.name }}"
+    mode: "0600"
   loop: "{{ users }}"
+  no_log: true
   tags: [config, copy_env]
 
 - name: Pull latest image
-  become_user: "{{ item.name }}"
-  command: docker pull {{ dockerhub_username }}/love_bot:latest
+  ansible.builtin.command:
+    cmd: docker pull {{ dockerhub_username }}/love_bot:latest
+  register: docker_pull
+  changed_when: "'Downloaded newer image' in docker_pull.stdout"
+  when: not ansible_check_mode
   loop: "{{ users }}"
   tags: [image]
 
 - name: Run docker compose
-  become_user: "{{ item.name }}"
-  command: docker-compose up -d
-  args:
+  ansible.builtin.command:
+    cmd: docker-compose up -d
     chdir: "/home/{{ item.name }}/projects/{{ item.project_name }}"
+  register: docker_compose_up
+  changed_when: "'Creating' in docker_compose_up.stderr or 'Recreating' in docker_compose_up.stderr or 'Starting' in docker_compose_up.stderr"
+  when: not ansible_check_mode
   loop: "{{ users }}"
   tags: [compose, run_docker_compose]

@@ -1,4 +1,4 @@
-- hosts: love_bot
+- hosts: free_vm
   become: yes
 
   roles:

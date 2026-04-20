@@ -2,6 +2,6 @@ github_username: "Azat"
 dockerhub_username: azatone
 
 users:
-      - name: devops
-        email: azatone@gmail.com
-        project_name: love_bot
+  - name: devops
+    email: azatone@gmail.com
+    project_name: love_bot

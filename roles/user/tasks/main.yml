@@ -9,19 +9,18 @@
   ansible.builtin.user:
     name: "{{ item.name }}"
     state: present
+    create_home: yes
+    shell: /bin/bash
   loop: '{{ users }}'
   tags: [create_users]
-
-- name: set bash shell
-  ansible.builtin.user:
-    name: "{{ item.name}}"
-    shell: /bin/bash
-  loop: "{{ users }}"
-  tags: [shell, set_shell]
 
 - name: add git branch to bash prompt
   ansible.builtin.blockinfile:
     path: "/home/{{ item.name }}/.bashrc"
+    create: yes
+    owner: "{{ item.name }}"
+    group: "{{ item.name }}"
+    mode: '0644'
     marker: "# {mark} ANSIBLE MANAGED BLOCK: GIT PROMPT"
     block: |
       parse_git_branch() {
@@ -29,41 +28,47 @@
       }
       export PS1="${debian_chroot:+($debian_chroot)}\[\033[01;32m\]\u@\h\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\[\033[01;33m\]\$(parse_git_branch)\[\033[00m\]\$ "
   loop: "{{ users }}"
-  tags: [shell, prompt]
+  tags: [prompt]
 
 - name: Set git user name
-  become_user: "{{ item.name }}"
   ansible.builtin.git_config:
     name: user.name
     value: "{{ item.name }}"
-    scope: global
+    scope: global 
+  environment:
+    HOME: "/home/{{ item.name }}"
   loop: "{{ users }}"
   tags: [git_config]
 
 - name: Set git user email
-  become_user: "{{ item.name }}"
   ansible.builtin.git_config:
     name: user.email
     value: "{{ item.email }}"
     scope: global
+  environment:
+    HOME: "/home/{{ item.name }}"
   loop: "{{ users }}"
   tags: [git_config]
 
 - name: Ensure .ssh directory exists
-  become_user: "{{ item.name }}"
   file:
     path: "/home/{{ item.name }}/.ssh"
     state: directory
+    owner: "{{ item.name }}"
+    group: "{{ item.name }}"
     mode: '0700'
   loop: "{{ users }}"
-  tags: [ssh]  
+  tags: [ssh] 
 
 - name: Generate SSH key
-  become_user: "{{ item.name }}"
   ansible.builtin.openssh_keypair:
     path: "/home/{{ item.name }}/.ssh/id_ed25519"
     type: ed25519
     comment: "{{ item.email }}"
+    owner: "{{ item.name }}"
+    group: "{{ item.name }}"
+    mode: '0600'
+  when: not ansible_check_mode
   loop: "{{ users }}"
   tags: [ssh]
 
@@ -71,8 +76,9 @@
   ansible.builtin.slurp:
     src: "/home/{{ item.name }}/.ssh/id_ed25519.pub"
   register: ssh_keys
+  when: not ansible_check_mode
   loop: "{{ users }}"
-  tags: [ssh]
+  tags: [ssh, github]
 
 - name: Add SSH key to GitHub
   ansible.builtin.uri:
@@ -85,143 +91,173 @@
     body:
       title: "{{ item.item.name }}@{{ inventory_hostname }}"
       key: "{{ item.content | b64decode }}"
-    status_code: [201, 422]
-  loop: "{{ ssh_keys.results }}"
+  register: github_key_result
+  failed_when: github_key_result.status not in [201, 422]
+  loop: "{{ ssh_keys.results | selectattr('content', 'defined') | list }}"
+  when: not ansible_check_mode
   tags: [github]
 
 - name: Add github.com to known_hosts
-  become_user: "{{ item.name }}"
   ansible.builtin.known_hosts:
+    path: "/home/{{ item.name }}/.ssh/known_hosts"
     name: github.com
     key: "{{ lookup('pipe', 'ssh-keyscan github.com') }}"
+  when: not ansible_check_mode
   loop: "{{ users }}"
   tags: [github]
 
-- name: Create GitHub repository
-  ansible.builtin.uri:
-    url: "https://api.github.com/user/repos"
-    method: POST
-    headers:
-      Authorization: "token {{ github_token }}"
-      Accept: "application/vnd.github+json"
-    body_format: json
-    body:
-      name: "{{ item.project_name }}"
-      private: true
-    status_code: [201, 422]
-  loop: "{{ users }}"
-  tags: [github]
 
-- name: Create project directory
-  ansible.builtin.file:
-    path: "/home/{{ item.name }}/projects/{{ item.project_name }}"
-    state: directory
-    owner: "{{ item.name }}"
-    group: "{{ item.name }}"
-    mode: '0755'
-  loop: "{{ users }}"
-  tags: [git_repo]
 
-- name: Init git repo
-  become_user: "{{ item.name }}"
-  command: git init -b main
-  args:
-    chdir: "/home/{{ item.name }}/projects/{{ item.project_name }}"
-  loop: "{{ users }}"
-  tags: [git_repo]
 
-- name: Create README
-  become_user: "{{ item.name }}"
-  copy:
-    dest: "/home/{{ item.name }}/projects/{{ item.project_name }}/README.md"
-    content: "# {{ item.project_name }}"
-  loop: "{{ users }}"
-  tags: [git_repo]
 
-- name: Ensure project secrets are ignored by Git
-  become_user: "{{ item.name }}"
-  ansible.builtin.blockinfile:
-    path: "/home/{{ item.name }}/projects/{{ item.project_name }}/.gitignore"
-    create: yes
-    mode: "0644"
-    marker: "# {mark} ANSIBLE MANAGED BLOCK: SECRET FILES"
-    block: |
-      .env
-      .env.*
-      !.env.example
-  loop: "{{ users }}"
-  tags: [git_repo, gitignore]
+##############dop########
 
-- name: Ensure .env is not tracked by Git
-  become_user: "{{ item.name }}"
-  command: git rm --cached --ignore-unmatch .env
-  args:
-    chdir: "/home/{{ item.name }}/projects/{{ item.project_name }}"
-  register: git_rm_env
-  changed_when: git_rm_env.stdout != ""
-  loop: "{{ users }}"
-  tags: [git_repo, gitignore]
+# - name: Create GitHub repository
+#   ansible.builtin.uri:
+#     url: "https://api.github.com/user/repos"
+#     method: POST
+#     headers:
+#       Authorization: "token {{ github_token }}"
+#       Accept: "application/vnd.github+json"
+#     body_format: json
+#     body:
+#       name: "{{ item.project_name }}"
+#       private: true
+#     status_code: [201, 422]
+#   when: not ansible_check_mode
+#   loop: "{{ users }}"
+#   tags: [github]
 
-- name: Check git remotes
-  become_user: "{{ item.name }}"
-  command: git remote
-  args:
-    chdir: "/home/{{ item.name }}/projects/{{ item.project_name }}"
-  register: git_remotes
-  loop: "{{ users }}"
-  loop_control:
-    index_var: idx
-  tags: [git_repo]
+# - name: Create project directory
+#   ansible.builtin.file:
+#     path: "/home/{{ item.name }}/projects/{{ item.project_name }}"
+#     state: directory
+#     owner: "{{ item.name }}"
+#     group: "{{ item.name }}"
+#     mode: '0755'
+#   loop: "{{ users }}"
+#   tags: [git_repo]
 
-- name: Add origin remote
-  become_user: "{{ item.name }}"
-  command: git remote add origin git@github.com:azatone-art/{{ item.project_name }}.git
-  args:
-    chdir: "/home/{{ item.name }}/projects/{{ item.project_name }}"
-  loop: "{{ users }}"
-  loop_control:
-    index_var: idx
-  when: "'origin' not in git_remotes.results[idx].stdout"
-  tags: [git_repo]
+# - name: Init git repo
+#   command: git init -b main
+#   args:
+#     chdir: "/home/{{ item.name }}/projects/{{ item.project_name }}"
+#   when: not ansible_check_mode
+#   loop: "{{ users }}"
+#   tags: [git_repo]
 
-- name: Git add
-  become_user: "{{ item.name }}"
-  command: git add .
-  args:
-    chdir: "/home/{{ item.name }}/projects/{{ item.project_name }}"
-  changed_when: false  
-  loop: "{{ users }}"
-  tags: [git_repo]
+# - name: Create README
+#   copy:
+#     dest: "/home/{{ item.name }}/projects/{{ item.project_name }}/README.md"
+#     content: "# {{ item.project_name }}"
+#     owner: "{{ item.name }}"
+#     group: "{{ item.name }}"
+#     mode: '0644'
+#   when: not ansible_check_mode
+#   loop: "{{ users }}"
+#   tags: [git_repo]
 
-- name: Check git changes
-  become_user: "{{ item.name }}"
-  command: git status --porcelain
-  args:
-    chdir: "/home/{{ item.name }}/projects/{{ item.project_name }}"
-  register: git_status
-  changed_when: false
-  loop: "{{ users }}"
-  loop_control:
-    index_var: idx
-  tags: [git_repo]
+# - name: Ensure project secrets are ignored by Git
+#   ansible.builtin.blockinfile:
+#     path: "/home/{{ item.name }}/projects/{{ item.project_name }}/.gitignore"
+#     create: yes
+#     owner: "{{ item.name }}"
+#     group: "{{ item.name }}"
+#     mode: "0644"
+#     marker: "# {mark} ANSIBLE MANAGED BLOCK: SECRET FILES"
+#     block: |
+#       .env
+#       .env.*
+#       !.env.example
+#   when: not ansible_check_mode
+#   loop: "{{ users }}"
+#   tags: [git_repo, gitignore]
 
-- name: Git commit
-  become_user: "{{ item.name }}"
-  command: git commit -m "Initial commit"
-  args:
-    chdir: "/home/{{ item.name }}/projects/{{ item.project_name }}"
-  loop: "{{ users }}"
-  loop_control:
-    index_var: idx
-  when: git_status.results[idx].stdout != ""
-  tags: [git_repo]
+# - name: Ensure .env is not tracked by Git
+#   command: git rm --cached --ignore-unmatch .env
+#   args:
+#     chdir: "/home/{{ item.name }}/projects/{{ item.project_name }}"
+#   environment:
+#     HOME: "/home/{{ item.name }}"
+#   register: git_rm_env
+#   changed_when: git_rm_env.stdout != ""
+#   when: not ansible_check_mode
+#   loop: "{{ users }}"
+#   tags: [git_repo, gitignore]
 
-- name: Git push
-  become_user: "{{ item.name }}"
-  command: git push -u origin main
-  args:
-    chdir: "/home/{{ item.name }}/projects/{{ item.project_name }}"
-  environment:
-    GIT_SSH_COMMAND: "ssh -o StrictHostKeyChecking=no"  
-  loop: "{{ users }}"
-  tags: [git_repo]
+# - name: Check git remotes
+#   command: git remote
+#   args:
+#     chdir: "/home/{{ item.name }}/projects/{{ item.project_name }}"
+#   environment:
+#     HOME: "/home/{{ item.name }}"
+#   register: git_remotes
+#   when: not ansible_check_mode
+#   loop: "{{ users }}"
+#   loop_control:
+#     index_var: idx
+#   tags: [git_repo]
+
+# - name: Add origin remote
+#   command: git remote add origin git@github.com:azatone-art/{{ item.project_name }}.git
+#   args:
+#     chdir: "/home/{{ item.name }}/projects/{{ item.project_name }}"
+#   environment:
+#     HOME: "/home/{{ item.name }}"
+#   loop: "{{ users }}"
+#   loop_control:
+#     index_var: idx
+#   when: 
+#        - not ansible_check_mode
+#        - "'origin' not in git_remotes.results[idx].stdout"
+#   tags: [git_repo]
+
+# - name: Git add
+#   command: git add .
+#   args:
+#     chdir: "/home/{{ item.name }}/projects/{{ item.project_name }}"
+#   environment:
+#     HOME: "/home/{{ item.name }}"
+#   changed_when: false  
+#   when: not ansible_check_mode
+#   loop: "{{ users }}"
+#   tags: [git_repo]
+
+# - name: Check git changes
+#   command: git status --porcelain
+#   args:
+#     chdir: "/home/{{ item.name }}/projects/{{ item.project_name }}"
+#   environment:
+#     HOME: "/home/{{ item.name }}"
+#   register: git_status
+#   changed_when: false
+#   when: not ansible_check_mode
+#   loop: "{{ users }}"
+#   loop_control:
+#     index_var: idx
+#   tags: [git_repo]
+
+# - name: Git commit
+#   command: git commit -m "Initial commit"
+#   args:
+#     chdir: "/home/{{ item.name }}/projects/{{ item.project_name }}"
+#   environment:
+#     HOME: "/home/{{ item.name }}"
+#   loop: "{{ users }}"
+#   loop_control:
+#     index_var: idx
+#   when: 
+#        - not ansible_check_mode
+#        - git_status.results[idx].stdout != ""
+#   tags: [git_repo]
+
+# - name: Git push
+#   command: git push -u origin main
+#   args:
+#     chdir: "/home/{{ item.name }}/projects/{{ item.project_name }}"
+#   environment:
+#     GIT_SSH_COMMAND: "ssh -i /home/{{ item.name }}/.ssh/id_ed25519 -o StrictHostKeyChecking=no" 
+#     HOME: "/home/{{ item.name }}" 
+#   when: not ansible_check_mode
+#   loop: "{{ users }}"
+#   tags: [git_repo]
